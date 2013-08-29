@@ -76,7 +76,7 @@ def PreprocessTimeDiff(obj, name, startFrom, dropstime=0, maxvalue=None, skipBad
 	    if obj.name_val[name][j] not in values:
 		values.append(obj.name_val[name][j])
 		
-	print "PreprocessTimeDiff:%s -> %s" % (name, values)
+#	print "PreprocessTimeDiff:%s -> %s" % (name, values)
 	if len(values) < 2:	    
 	    return
 
@@ -187,11 +187,15 @@ def PreprocessTimeDiff(obj, name, startFrom, dropstime=0, maxvalue=None, skipBad
 	    stime[j] = sqrt(stime[j] / len(tdiffs[j]))
 
         def format_array(ar):
-            j = [ "%.3f" % x for x in ar ]
+            j = [ "%9.0f" % x for x in ar ]
             return "[" + reduce(lambda x, y: x + ", " + y, j) + "]"
 	
-        print "PreprocessTimeDiff:%s -> %s  Tot %s  Avg %s  Max %s  Sig %s  -> %d" % (
-                name, values, format_array(ttime), format_array(atime), format_array(mtime), format_array(stime), len(sttime))
+	print "        Number of points: %d" % (len(sttime))
+	print "        Values:       %s" % (values,)
+	print "        Total time:   %s us, [%.1f%%, %.1f%%]" % (format_array(ttime), 100.0*ttime[0]/(ttime[0]+ttime[1]), 100.0*ttime[1]/(ttime[0]+ttime[1]))
+	print "        Average time: %s us" % (format_array(atime),)
+	print "        Max time:     %s us" % (format_array(mtime),)
+	print "        Sigma:        %s us" % (format_array(stime),)
 	 
 	try:
 	    obj.pre_sttime
@@ -796,7 +800,7 @@ for d in data:
     elif i in conf.custom_styles:
         style = conf.custom_styles[i]
     
-    print "%20s: %6d items  ymin=%4d ymax=%4d \t start=%f  stop=%f  style=%s" % (i, len(d.name_val[i]),  ymin, ymax,  
+    print "%21s: %6d items  ymin=%4d ymax=%4d \t start=%f  stop=%f  style=%s" % (i, len(d.name_val[i]),  ymin, ymax,  
                                   (d.name_time[i][0]-xstart)/1000000.0, (d.name_time[i][-1]-xstart)/1000000.0,  style.fullname)
     
     if len(data) > 1:
@@ -815,9 +819,9 @@ for d in data:
     if style.type == 'auto':
         if ymin == 0 and ymax == 1:
             style = Settings.Style('tdiffms')
-            print "%20s: seems to be time measuring" % i
+            print "%21s: seems to be time measuring" % i
         else:
-            print "%20s: defaulting to value plot" % i
+            print "%21s: defaulting to value plot" % i
     d.styles[i] = style
 
     if style.type == 'imp':
