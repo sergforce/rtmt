@@ -603,11 +603,13 @@ class Settings:
                     self.limit = float(vals[1])
                 elif self.type == "tdiffms":
                     self.limit = 1000
-                    
+                elif self.type == "tdiffus":
+                    self.limit = 1000
+
             self.CheckStyle()
 
         def CheckStyle(self):
-             known_types = ("imp", "tdiffms",  "none")
+             known_types = ("imp", "tdiffms", "auto", "none", "tdiffus")
              if self.type not in known_types:
                 print "Unknown type %s!\n" % (self.type)
                 sys.exit(-1)
@@ -621,7 +623,7 @@ class Settings:
         self.be = False
         self.statAll = False
         #self.ds = "imp"
-        self.ds = "tdiffms"
+        self.ds = "auto"
         self.linestyle = "dots"
         self.statNames = None
         self.startFrom  = 0
@@ -741,9 +743,6 @@ if conf.linestyle != None:
 
 print "LINESTYLE=%s" % linestyle
 
-#linestyle = "linespoints"
-#linestyle = "linespoints"
-
 script = ""
 
 def fillHscipt():
@@ -760,9 +759,6 @@ def fillHscipt():
 	hscript = hscript + "set xtics %s\n" %  conf.params["xtics"]
 
 gstart = conf.startFrom
-#if "gstart" in conf.params:
-#    gstart = float(conf.params["gstart"])
-
 
 xstart = 0xFFFFFFFFFFFFFFF
 xend = 0.0
@@ -770,8 +766,7 @@ for j in data:
     for i in j.name_time:
         xstart = min( xstart,  j.name_time[i][0])
         xend = max ( xend,   j.name_time[i][-1])
-    
-    #j.startUSecTime = j.startUSecTime + xstart
+
 
 print "Duration [%f:%f]  (%f sec)\n" % (xstart/1000000.0,  xend/1000000.0,  (xend - xstart)/1000000.0)
 script = script + "set xrange [%f:%f] \n"  %  (gstart,  xend - xstart)
@@ -818,12 +813,15 @@ for d in data:
         no_zeroes = 1
         tdls = linestyle
 
+    if style.type == 'auto':
+        if ymin == 0 and ymax == 1:
+            style = Settings.Style('tdiffms')
+            print "%20s: seems to be time mesuaring" % i
+        else:
+            print "%20s: defaulting to value plot" % i
     
     if style.type == 'imp':
-        #d.name_td[i] = []
-        #d.name_tdv[i] = []
-        #linestyle = "with filledcurve"
-      
+
         script = script + "plot '%s' t \"%s\" %s lc %d\n" % (datafilename, dataname, tdls, k)
         f = open(fname, "w")
         try:
@@ -835,27 +833,26 @@ for d in data:
                 f.write ('%f\t%d\n' % (d.name_time[i][j] - xstart , d.name_val[i][j] ))
                 yprev = d.name_val[i][j]
                 
-                #d.name_td[i].append(d.name_val[i][j])
-                #d.name_tdv[i].append(d.name_time[i][j] - xstart)
         finally:
     	    f.close()
                 
-    elif style.type == 'tdiffms':
-	
+    elif style.type == 'tdiffms' or style.type == 'tdiffus':
         try:
             PreprocessTimeDiff(d, i, conf.startFrom)
 
-            d.plottype[i] = 'tdiffms'
+            d.plottype[i] = style.type
 
             tdiffms = style.limit
             numplots = 0
+            div = 1 if style.type == 'tdiffus' else 1000
+
             f = open(fname, "w")
             try:
                 cnt = len(d.pre_tdiffs[i])
                 numplots = min([len(d.pre_tdiffs[i][h])  for h in xrange(cnt)])
 
                 for j in xrange(numplots):
-                    oline = [(d.pre_tdiffs[i][h][j]/1000.0)  for h in xrange(cnt)]
+                    oline = [(d.pre_tdiffs[i][h][j]/div)  for h in xrange(cnt)]
                     line = [sum(oline[:h+1])   for h in xrange(cnt)]
                     f.write ("%f\t%s\n" % (d.pre_sttime[i][j]-xstart, reduce(lambda x,y: "%s\t%s" % (x,y), line )))
 
@@ -868,8 +865,8 @@ for d in data:
                                               datafilename, j+2, dataname, j+1, j+2 if j+2<cnt else 0, tdls, k+j) for j in xrange(cnt)  ]
                 script = script + reduce(lambda x,y: "%s,\\\n%s" % (x,y), line) + "\n"
               else:
-                script = script + "plot '%s' t \"%s (diff in ms, MAX=%d)\" %s lc %d\n" % (
-                                             datafilename, dataname, tdiffms, tdls, k)
+                script = script + "plot '%s' t \"%s (%s, MAX=%d)\" %s lc %d\n" % (
+                                             datafilename, dataname,  style.type,  tdiffms, tdls, k)
             else:
                 print "No timediff data in %s!" % dataname
                 plots = plots - 1
@@ -878,14 +875,12 @@ for d in data:
             plots = plots - 1
 
     else: #if style == 'none':    
-        script = script + "plot '%s' t \"%s\" with %s lc %d\n" % (datafilename, dataname, linestyle, k)    
+        script = script + "plot '%s' t \"%s\" %s lc %d\n" % (datafilename, dataname, tdls, k)
         f = open(fname, "w")
         try:
             for j in xrange(len(d.name_time[i])):
                 f.write ('%f\t%d\n' % (d.name_time[i][j] - xstart , d.name_val[i][j] ))
                 
-                d.name_td[i].append(d.name_val[i][j])
-                d.name_tdv[i].append(d.name_time[i][j] - xstart)                
 	finally:
 	    f.close()
 
@@ -896,7 +891,7 @@ for d in data:
 if conf.statAll:
   for d in data:
     for i in d.name_time:
-      if d.styles[i].type == 'tdiffms':
+      if d.styles[i].type == 'tdiffms' or d.styles[i].type == 'tdiffus' :
         SummaryStat(d, i, 1, False)
         m = d.stat_atime[i][0] + 2*d.stat_stime[i][0]
         delim = 0.1
