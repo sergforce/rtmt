@@ -176,10 +176,6 @@ def PreprocessTimeDiff(obj, name, startFrom, dropstime=0, maxvalue=None, skipBad
 	      start = cur	      
 	      previdx = idx
 
-	#print len (sttime)
-	#print len (tdiffs[0])
-	#print len (values)
-
 	for j in xrange(len(values)):
 	    atime[j] = ttime[j] * 1.0 / len(tdiffs[j if j < len(values) - zeroign else 0])
 	
@@ -189,8 +185,13 @@ def PreprocessTimeDiff(obj, name, startFrom, dropstime=0, maxvalue=None, skipBad
 	
 	for j in xrange(len(values) - zeroign):
 	    stime[j] = sqrt(stime[j] / len(tdiffs[j]))
+
+        def format_array(ar):
+            j = [ "%.3f" % x for x in ar ]
+            return "[" + reduce(lambda x, y: x + ", " + y, j) + "]"
 	
-	print "PreprocessTimeDiff:%s -> %s  Tot %s  Max %s Sig %s  -> %d" % (name, values, ttime, mtime, stime, len(sttime))
+        print "PreprocessTimeDiff:%s -> %s  Tot %s  Avg %s  Max %s  Sig %s  -> %d" % (
+                name, values, format_array(ttime), format_array(atime), format_array(mtime), format_array(stime), len(sttime))
 	 
 	try:
 	    obj.pre_sttime
@@ -816,7 +817,7 @@ for d in data:
     if style.type == 'auto':
         if ymin == 0 and ymax == 1:
             style = Settings.Style('tdiffms')
-            print "%20s: seems to be time mesuaring" % i
+            print "%20s: seems to be time measuring" % i
         else:
             print "%20s: defaulting to value plot" % i
     
