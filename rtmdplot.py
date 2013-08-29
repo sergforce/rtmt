@@ -926,10 +926,7 @@ for d in data:
 
     k = k + 1
 
-#  d.DumpCSV('%s/%s.csv' % (d.filename, d.filename))
 
-SummaryStat(d, "ref")
-SummaryStat(d, "send")
 
 if conf.statAll:
   for d in data:
@@ -947,8 +944,9 @@ if conf.statAll:
                     if m / delim > 2000:
                          delim = delim * 2
 
+        path_as, dummy = os.path.split(os.path.abspath(sys.argv[0]))
         print delim
-        scmd = "(cd %s; $ASTSDIR/rtmd/auto-stat.py -f %s.stat.dat -y %g >> ../stat.log)" % (dirname, i, delim)
+        scmd = "(cd %s; %s/auto-stat.py -f %s.stat.dat -y %g >> ../stat.log)" % (dirname, path_as, i, delim)
         os.system(scmd)
 else:
   if conf.statNames != None:
@@ -956,8 +954,6 @@ else:
     print "Calculating stat for %s" % i
     SummaryStat(d, i)
     
-#SummaryStat(d, "tsmr")
-#SummaryStat(d, "switch")
 
 fillHscipt()
 
@@ -973,4 +969,5 @@ os.chmod("%s/%s.rtmd.plt" % (dirname, filename),
          stat.S_IRWXU or stat.S_IXGRP or stat.S_IRGRP or stat.S_IXOTH or stat.S_IROTH)
 
 
-#os.system("( cd %s; ./%s.rtmd.plt )" % (dirname, filename))
+os.system("( cd %s; ./%s.rtmd.plt )" % (dirname, filename))
+

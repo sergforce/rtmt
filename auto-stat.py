@@ -352,7 +352,8 @@ class AutoStat:
                   finally:
                       f.close()
     
-      os.system("( cd %s; $ASTSDIR/rtmd/mkplot.py -y %g -t %g -m %g)" % (statfolder, self.hystdelta, self.hystdelta * 10, ma))
+      path_as, dummy = os.path.split(os.path.abspath(sys.argv[0]))
+      os.system("( cd %s; %s/mkplot.py -y %g -t %g -m %g)" % (statfolder, path_as, self.hystdelta, self.hystdelta * 10, ma))
     
       f = open("stat-all-%s.csv" % searchi, "w")
       try:
