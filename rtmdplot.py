@@ -457,10 +457,14 @@ class ParseRTMD:
 		elif ver == 1 and flag == 'C':
 		  clock, line, val = unpack("%sQIi" % fmt,  chunk)
 		
-                sec, usec, line, val = unpack("%sIIIi" % fmt,  chunk)
+                sec, usec, line, val = unpack("%sIIii" % fmt,  chunk)
                 
                 ## End of binary reader
                 ####################################################
+
+                # Threaded name fixup
+                if flag == 'C' and line < 0:
+                    name = name + "@%d" % (-line)
                 
                 #print '%s \tat %d.%d (%d) :\t %d ' %  (name,  sec, usec, line, val )
                 if name[0] == '#':
