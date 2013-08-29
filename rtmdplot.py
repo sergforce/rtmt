@@ -796,8 +796,6 @@ for d in data:
     elif i in conf.custom_styles:
         style = conf.custom_styles[i]
     
-    d.styles[i] = style
-    
     print "%20s: %6d items  ymin=%4d ymax=%4d \t start=%f  stop=%f  style=%s" % (i, len(d.name_val[i]),  ymin, ymax,  
                                   (d.name_time[i][0]-xstart)/1000000.0, (d.name_time[i][-1]-xstart)/1000000.0,  style.fullname)
     
@@ -820,7 +818,8 @@ for d in data:
             print "%20s: seems to be time measuring" % i
         else:
             print "%20s: defaulting to value plot" % i
-    
+    d.styles[i] = style
+
     if style.type == 'imp':
 
         script = script + "plot '%s' t \"%s\" %s lc %d\n" % (datafilename, dataname, tdls, k)
