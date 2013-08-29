@@ -463,7 +463,7 @@ class ParseRTMD:
                 ####################################################
 
                 # Threaded name fixup
-                if flag == 'C' and line < 0:
+                if flag == 'C' and line < 0 and name[0] != '#':
                     name = name + "@%d" % (-line)
                 
                 #print '%s \tat %d.%d (%d) :\t %d ' %  (name,  sec, usec, line, val )
@@ -622,13 +622,13 @@ class Settings:
         self.statAll = False
         #self.ds = "imp"
         self.ds = "tdiffms"
-        self.linestyle = None
+        self.linestyle = "dots"
         self.statNames = None
         self.startFrom  = 0
         
         argv = sysargv[1:]
         if len(argv) < 1:
-            print "Usage: %s [--dots|--cross|--merge|--le|--be|--stat=name1,name2] filename [filename2] [variable=imp|tdiffms|none]\r" % sysargv[0]
+            print "Usage: %s [--nodots|--cross|--merge|--le|--be|--stat=name1,name2] filename [filename2] [variable=imp|tdiffms|none]\r" % sysargv[0]
             sys.exit(0)
         
         param = 0
@@ -657,9 +657,9 @@ class Settings:
 		    elif v[0:8] == "--defst-":
 			self.ds = v[8:]
 			print "> Using default plot style '%s'" % self.ds
-		    elif v == "--dots":
-			self.linestyle = "dots"
-			print "> Using DOTS"
+                    elif v == "--nodots":
+                        self.linestyle = "nodots"
+                        print "> Using FILLED CRUVE"
 		    elif v == "--cross":
 			self.linestyle = ""
 			print "> Using CROSES"
@@ -716,7 +716,7 @@ if (len(data) == 2):
 
 
 # Default directory and output filenames
-filename = conf.filenames[0]
+filename = os.path.basename(conf.filenames[0])
 dirname = "out"
 if len(data) == 1:
     dirname = data[0].filename;
@@ -842,75 +842,40 @@ for d in data:
                 
     elif style.type == 'tdiffms':
 	
-	PreprocessTimeDiff(d, i, conf.startFrom)
-	
-	
-        d.plottype[i] = 'tdiffms'
-        #d.name_td[i] = []
-        #d.name_tdv[i] = []
+        try:
+            PreprocessTimeDiff(d, i, conf.startFrom)
 
-        tdiffms = style.limit
-        numplots = 0
-	f = open(fname, "w")
-	try:
-	    cnt = len(d.pre_tdiffs[i])
-	    numplots = min([len(d.pre_tdiffs[i][h])  for h in xrange(cnt)])
-	    
-	    for j in xrange(numplots):
-	      #if d.pre_sttime[i][j]-xstart > conf.startFrom:
-		#byte  to byte identical
-		#line = ["%f" % (d.pre_tdiffs[i][h][j]/1000.0)  for h in xrange(cnt)]
-		#f.write ("%f\t%s\n" % (tm-xstart, reduce(lambda x,y: "%s\t%s", line )))
-		
-		oline = [(d.pre_tdiffs[i][h][j]/1000.0)  for h in xrange(cnt)]
-		line = [sum(oline[:h+1])   for h in xrange(cnt)]
-		#line = [sum(oline[h:])   for h in xrange(cnt)]
-		f.write ("%f\t%s\n" % (d.pre_sttime[i][j]-xstart, reduce(lambda x,y: "%s\t%s" % (x,y), line )))
-		
-	finally:
-	    f.close()
+            d.plottype[i] = 'tdiffms'
 
-	if False:
-          f = open(fname, "w")
-          try:
-            start = d.name_time[i][0]
-            yprev = d.name_val[i][0]
-            for j in xrange(len(d.name_time[i])):
-                if d.name_val[i][j] < yprev:
-		    numplots = numplots + 1
-                    diff =  (d.name_time[i][j] - start) / 1000.0
-                    
-                    d.name_td[i].append(d.name_time[i][j] - start)
-                    d.name_tdv[i].append(start - xstart)
-                    
-                    if not no_zeroes:
-		      f.write ('%f\t%f\n' % (start - xstart , 0 ))
-                    if diff < tdiffms:
-                        f.write ('%f\t%f\n' % (start - xstart , diff ))
-                        if not no_zeroes:
-			  f.write ('%f\t%f\n' % (start - xstart , 0 ))
-                    else:
-                        f.write ('%f\t%f\n' % (start - xstart , tdiffms ))
-                        f.write ('%f\t%f\n' % (d.name_time[i][j] - xstart , tdiffms ))
-                        if not no_zeroes:
-			  f.write ('%f\t%f\n' % (d.name_time[i][j] - xstart , 0 ))
-                        
-                start = d.name_time[i][j]
-                yprev = d.name_val[i][j]
-          finally:
-    	    f.close()
+            tdiffms = style.limit
+            numplots = 0
+            f = open(fname, "w")
+            try:
+                cnt = len(d.pre_tdiffs[i])
+                numplots = min([len(d.pre_tdiffs[i][h])  for h in xrange(cnt)])
 
-	if numplots > 0:
-	  if cnt > 1:
-	    line = ["%s '%s' u 1:%d t \"%s:%d->%d (ms)\" %s lc %d" % ("plot" if j == 0 else "    ",
-					  datafilename, j+2, dataname, j+1, j+2 if j+2<cnt else 0, tdls, k+j) for j in xrange(cnt)  ]
-	    script = script + reduce(lambda x,y: "%s,\\\n%s" % (x,y), line) + "\n"
-	  else:
-	    script = script + "plot '%s' t \"%s (diff in ms, MAX=%d)\" %s lc %d\n" % (
-                                         datafilename, dataname, tdiffms, tdls, k)
-	else:
-	    print "No timediff data in %s!" % dataname
-	    plots = plots - 1
+                for j in xrange(numplots):
+                    oline = [(d.pre_tdiffs[i][h][j]/1000.0)  for h in xrange(cnt)]
+                    line = [sum(oline[:h+1])   for h in xrange(cnt)]
+                    f.write ("%f\t%s\n" % (d.pre_sttime[i][j]-xstart, reduce(lambda x,y: "%s\t%s" % (x,y), line )))
+
+            finally:
+                f.close()
+
+            if numplots > 0:
+              if cnt > 1:
+                line = ["%s '%s' u 1:%d t \"%s:%d->%d (ms)\" %s lc %d" % ("plot" if j == 0 else "    ",
+                                              datafilename, j+2, dataname, j+1, j+2 if j+2<cnt else 0, tdls, k+j) for j in xrange(cnt)  ]
+                script = script + reduce(lambda x,y: "%s,\\\n%s" % (x,y), line) + "\n"
+              else:
+                script = script + "plot '%s' t \"%s (diff in ms, MAX=%d)\" %s lc %d\n" % (
+                                             datafilename, dataname, tdiffms, tdls, k)
+            else:
+                print "No timediff data in %s!" % dataname
+                plots = plots - 1
+        except:
+            print "Error during processing time diff in %s! skipping it" % dataname
+            plots = plots - 1
 
     else: #if style == 'none':    
         script = script + "plot '%s' t \"%s\" with %s lc %d\n" % (datafilename, dataname, linestyle, k)    
@@ -965,7 +930,7 @@ finally:
     f.close()
 
 
-os.chmod("%s/%s.rtmd.plt" % (dirname, filename),  
+os.chmod("%s/%s.rtmd.plt" % (dirname, filename),
          stat.S_IRWXU or stat.S_IXGRP or stat.S_IRGRP or stat.S_IXOTH or stat.S_IROTH)
 
 
