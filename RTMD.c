@@ -22,13 +22,44 @@ typedef unsigned __int64 uint64_t;
 #define get64(x)  (x)
 #endif
 
+////////////////////////////////////////
+// Configuration
+
 #define RTMD_THREAD_SAFE
 //#define NO_CYCLE
+//#define RTMD_SAFE_ALIGN
+//#define RTMD_NO_SSE
+
+// End of configuration
+////////////////////////////////////////
+
+// Autodetect SSE support
+#ifndef RTMD_NO_SSE
+#ifdef __SSE2__
+#define RTMD_USE_SSE2
+#endif
+#ifdef __SSE4_1__
+#define RTMD_USE_SSE4
+#endif
+#endif
+
+
+#if defined(RTMD_USE_SSE4) && !defined(RTMD_USE_SSE2)
+# define RTMD_USE_SSE2
+#endif
 
 #ifndef WITH_RTMD
 #define WITH_RTMD
 #endif
 #include "RTMD.h"
+
+
+#ifdef RTMD_USE_SSE4
+#include <smmintrin.h>
+#endif
+#ifdef RTMD_USE_SSE2
+#include <emmintrin.h>
+#endif
 
 
 #define RTMD_MAX_NAME		16
@@ -38,8 +69,8 @@ typedef unsigned __int64 uint64_t;
 #define RTMD_FLAG_CYCLEINI 'I'
 
 typedef struct RTMD_Node {
-    char      name[RTMD_MAX_NAME-1];
-    char      cycleFlag;
+    char      name[RTMD_MAX_NAME];
+    //char      cycleFlag;
 
     union {
         struct {
@@ -91,6 +122,14 @@ int gettimeofday_port(struct timeval* ptv, void* _unsigned)
 }
 #endif
 
+#ifdef __GNUC__
+#define likely(x)       __builtin_expect((x),1)
+#define unlikely(x)     __builtin_expect((x),0)
+#else
+#define likely(x)       (x)
+#define unlikely(x)     (x)
+#endif
+
 #define  secs       _unsec._tval.secs
 #define  usecs      _unsec._tval.usecs
 #define  val        _unval._sln.val
@@ -99,7 +138,6 @@ int gettimeofday_port(struct timeval* ptv, void* _unsigned)
 #define  val64      _unval.val64
 
 
-static RTMD_Node_t* mem = 0;
 
 #if _POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600
 static void* node_alloc(size_t size)
@@ -121,8 +159,60 @@ static void* node_alloc(size_t size)
 #endif
 
 /* Need to be volatile for proper work from signal handlers */
+static RTMD_Node_t*         mem = 0;
+static unsigned             count = 0;
+static char                 dummy0[64];  //cache line separator
 static volatile unsigned    ptr = 0;
-static unsigned    count = 0;
+static char                 dummy1[64];  //cache line separator
+
+
+#if defined(RTMD_SAFE_ALIGN) || defined(RTMD_USE_SSE2)
+# ifdef RTMD_USE_SSE2
+#  define FAST_STORE_NAME_1(from, to, i)   \
+      __m128i _tmp_name = _mm_loadu_si128((__m128i*)from)
+#  ifdef RTMD_USE_SSE4
+#   define FAST_STORE_NAME_2(from, to, i)   \
+     _mm_store_si128((__m128i*)to, _mm_insert_epi8(_tmp_name, (i), 15))
+#  else
+#   define FAST_STORE_NAME_2(from, to, i)   \
+     _mm_store_si128((__m128i*)to, _mm_insert_epi16(_tmp_name, (i) << 8, 7))
+#  endif
+# else
+#  define FAST_STORE_NAME_1(from, to, i)
+#  define FAST_STORE_NAME_2(from, to, i)   \
+    (strncpy(to, from, RTMD_MAX_NAME - 1), \
+    to[15] = i)
+# endif
+#else
+# define FAST_STORE_NAME_1(from, to, i)
+# define FAST_STORE_NAME_2(from, to, i)                       \
+    (*((int64_t * )(to)) = *((const int64_t * )from),         \
+     *((int64_t * )(&to[8])) = *((const int64_t * )&from[8]), \
+     to[15] = i)
+
+#endif
+
+
+/*
+ * You can use ' slot = ptr++; ' instead the instruction above,
+ * but this doesn't guarantee proper work in a multi-thread application
+ */
+
+#ifdef __hpux
+# define INCREMENT_SLOT(ptr)        ptr++
+#else
+# ifdef RTMD_THREAD_SAFE
+#  if defined(_MSC_VER)
+#   define INCREMENT_SLOT(ptr)      (_InterlockedIncrement(&ptr) - 1)
+#  else
+#   define INCREMENT_SLOT(ptr)      __sync_fetch_and_add(&ptr, 1)
+#  endif
+# else
+#  define INCREMENT_SLOT(ptr)      ptr++
+# endif
+#endif
+
+
 
 int RTMD_IsFull(void) {
 	return ptr==count;
@@ -134,6 +224,9 @@ void RTMD_InitStorage(unsigned max)
 	if (mem != NULL)
 		return;
 
+	memset(dummy0, 0, sizeof(dummy0));
+	memset(dummy1, 0, sizeof(dummy1));
+	
 #ifdef WIN32
     NtQuerySystemTimePtr = (NTSTATUS (WINAPI *)(_Out_  PLARGE_INTEGER))GetProcAddress(LoadLibrary("ntdll.dll"), "NtQuerySystemTime");
 #endif
@@ -182,12 +275,12 @@ void RTMD_FlushStorage(const char* filename)
 #ifdef NO_CYCLE
 void RTMD_SetInt(const char* name, int clineNumber, int cval)
 {
-	if (mem == NULL)
+    if (unlikely(mem == NULL))
 		return;
 
 	struct timeval tv;
 	int err = gettimeofday(&tv, NULL);
-	if (err)
+    if (unlikely(err)
 	{
 /*		fprintf(stderr, "RTMD: Can't get time!\n"); */
 		return;
@@ -198,88 +291,54 @@ void RTMD_SetInt(const char* name, int clineNumber, int cval)
 
 void RTMD_SetTime(const char* name, int clineNumber, int cval, const struct timeval *tv)
 {
-	if (mem == NULL)
+    if (unlikely(mem == NULL))
 		return;
 
-	if (ptr < count)
+    if (ptr < count)
 	{
-		unsigned slot;
-#ifdef __hpux
-		slot = ptr++;
-#elif defined(_MSC_VER)
-        slot =  _InterlockedIncrement(&ptr) - 1;// __sync_fetch_and_add(&ptr, 1);
-#else
-		slot =  __sync_fetch_and_add(&ptr, 1);
-#endif
-		/*
-		 * You can use ' slot = ptr++; ' instead the instruction above,
-		 * but this doesn't guarantee proper work in a multi-thread application
-		 */
-
-		if (slot < count)
-		{
+        unsigned slot = INCREMENT_SLOT(ptr);
+        if (slot < count)
+		{            
 			mem[slot].secs = tv->tv_sec;
 			mem[slot].usecs = tv->tv_usec;
+
+            FAST_STORE_NAME_1(name, mem[slot].name, RTMD_FLAG_GTOFDAY);
+
 			mem[slot].lineNumber = clineNumber;
 			mem[slot].val = cval;
 
-			strncpy(mem[slot].name, name, RTMD_MAX_NAME - 1);
-			mem[slot].cycleFlag = RTMD_FLAG_GTOFDAY;
+            FAST_STORE_NAME_2(name, mem[slot].name, RTMD_FLAG_GTOFDAY);
 		}
 	}
-	else
-	{
-/* 		fprintf(stderr, "RTMD: Storage is full!\n");  */
-	}
-
 }
-
-
 
 #ifndef NO_CYCLE
 void RTMD_InitCycleTime(const char* name)
 {
 	struct timeval tv;
 	int err = gettimeofday(&tv, NULL);
-	if (err)
+    if (unlikely(err))
 	{
 /*		fprintf(stderr, "RTMD: Can't get time!\n"); */
 		return;
 	}
 
-	if (mem == NULL)
+    if (unlikely(mem == NULL))
 		return;
 
-	if (ptr < count + EXTRA_SPACE)
+    if (ptr < count + EXTRA_SPACE)
 	{
-		unsigned slot;
-#ifdef __hpux
-		slot = ptr++;
-#elif defined(_MSC_VER)
-        slot =  _InterlockedIncrement(&ptr) - 1;// __sync_fetch_and_add(&ptr, 1);
-#else
-		slot =  __sync_fetch_and_add(&ptr, 1);
-#endif
-		/*
-		 * You can use ' slot = ptr++; ' instead the instruction above,
-		 * but this doesn't guarantee proper work in a multi-thread application
-		 */
-
-		if (slot < count + EXTRA_SPACE)
+        unsigned slot = INCREMENT_SLOT(ptr);
+        if (slot < count + EXTRA_SPACE)
 		{
 			mem[slot].secs = tv.tv_sec;
-			mem[slot].usecs = tv.tv_usec;
+			mem[slot].usecs = tv.tv_usec;            
 			mem[slot].val64 = get64(getticks());
 
-			strncpy(mem[slot].name, name, RTMD_MAX_NAME - 1);
-			mem[slot].cycleFlag = RTMD_FLAG_CYCLEINI;
+            FAST_STORE_NAME_1(name, mem[slot].name, RTMD_FLAG_CYCLEINI);
+            FAST_STORE_NAME_2(name, mem[slot].name, RTMD_FLAG_CYCLEINI);
 		}
 	}
-	else
-	{
-/* 		fprintf(stderr, "RTMD: Storage is full!\n");  */
-	}
-
 }
 
 #ifdef __linux
@@ -291,14 +350,13 @@ void RTMD_InitCycleTime(const char* name)
 inline void RTMD_SetIntThread(const char*  name, int clineNumber, int cval)
 {
     static __thread pid_t stid; // __thread variables can't be initialized (zeroed on clone)
-    if (stid == 0) {
+    if (unlikely(stid == 0)) {
         stid = (pid_t) syscall (SYS_gettid);
     }
 
     int s = -(int)stid;
 
     RTMD_SetInt(name, s, cval);
-    return;
 }
 
 #endif
@@ -306,47 +364,27 @@ inline void RTMD_SetIntThread(const char*  name, int clineNumber, int cval)
 
 void RTMD_SetInt(const char*  name, int clineNumber, int cval)
 {
-	if (ptr < count)
-	{
-		unsigned slot;
-#ifdef __hpux
-		slot = ptr++;
-#else
-# ifdef RTMD_THREAD_SAFE
-#  if defined(_MSC_VER)
-        slot =  _InterlockedIncrement(&ptr) - 1;// __sync_fetch_and_add(&ptr, 1);
-#  else
-		slot =  __sync_fetch_and_add(&ptr, 1);
-#  endif
-# else
-		slot = ptr++;
-# endif
-#endif
-		/*
-		 * You can use ' slot = ptr++; ' instead the instruction above,
-		 * but this doesn't guarantee proper work in a multi-thread application
-		 */
+    unsigned l_count = count; //store it to register, otherwise sync* operation will cuase to reread it
+    if (ptr < l_count)
+    {
+        unsigned slot = INCREMENT_SLOT(ptr);
+        if (slot < l_count)
+        {
+            //uint64_t v = get64(getticks());
+            mem[slot].tick = get64(getticks());
 
-		if (slot < count)
-		{
-			mem[slot].tick = get64(getticks());
-			mem[slot].lineNumber = clineNumber;
-			mem[slot].val = cval;
+            FAST_STORE_NAME_1(name, mem[slot].name, RTMD_FLAG_CYCLE);
+            //FAST_STORE_NAME_2(name, mem[slot].name, RTMD_FLAG_CYCLE);
 
-#ifdef RTMD_SAFE_ALIGN
-			strncpy(mem[slot].name, name, RTMD_MAX_NAME - 1);
-#else
-			//May not work on PA-RISC due to memory align
-			*((int64_t * )mem[slot].name) = *((const int64_t * )name);
-			*((int64_t * )&mem[slot].name[8]) = *((const int64_t * )&name[8]);
-#endif
-			mem[slot].cycleFlag = RTMD_FLAG_CYCLE;
-		}
-	}
-	else
-	{
-/* 		fprintf(stderr, "RTMD: Storage is full!\n");  */
-	}
+            //mem[slot].tick = v;
+            //mem[slot].val64 = (uint64_t)cval << 32 | clineNumber;
+            mem[slot].lineNumber = clineNumber;
+            mem[slot].val = cval;
+
+            FAST_STORE_NAME_2(name, mem[slot].name, RTMD_FLAG_CYCLE);
+
+        }
+    }
 }
 #endif
 

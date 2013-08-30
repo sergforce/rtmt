@@ -1,5 +1,5 @@
 LDFLAGS=-lpthread -lrt
-CFLAGS=-Wall -O3 -I..
+CFLAGS=-Wall -march=native -O3 -I..
 RTMD_FILES=../RTMD.c ../RTMD.h
 
 .PHONY: all
