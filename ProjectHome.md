@@ -1,0 +1,1 @@
+Collection of library in C which uses TSC (RDTSC) approach to store data and high level interpreter to analyze execution of your code, statistics.
